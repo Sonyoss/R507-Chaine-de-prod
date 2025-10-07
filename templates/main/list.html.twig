@@ -18,6 +18,23 @@
             </div>
 
             <div>
+                <form method="get">
+                    <div class="form-group row">
+                        <label for="search" class="col-2 col-form-label">Recherche</label>
+                        <div class="col-10">
+                            <input type="text" class="form-control" id="search" name="search" value="{{ search }}">
+                        </div>
+                    </div>
+
+                    <div>
+                        <a href="{{ path('main_list') }}" class="btn btn-danger">
+                            Réinitialiser la recherche
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            Rechercher
+                        </button>
+                    </div>
+                </form>
 
                 <table class="table">
                     <thead>

@@ -56,7 +56,7 @@ final class MainController extends AbstractController
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
             $contact->setCreatedAt(new \DateTimeImmutable('now'));
-            $contact->setStatus("waiting");
+            $contact->setStatus("new");
             $em->persist($contact);
             $em->flush();
 
@@ -71,12 +71,16 @@ final class MainController extends AbstractController
     #[Route('/liste/{page}', name: 'list')]
     public function list(ContactRepository $repository, Request $request, ?int $page = 1): Response
     {
-        $limit = 2;
-        $contacts = $repository->paginate($page, $limit);
+        $limit = 2;        
+        $search = $request->query->get('search');
+        $contacts = $search
+            ? $repository->search($search)
+            : $repository->paginate($page, $limit);
         $totalPages = ceil($repository->count() / $limit);
 
         return $this->render('main/list.html.twig', [
             'contacts' => $contacts,
+            'search' => $search,
             'currentPage' => $page,
             'totalPages' => $totalPages,
         ]);
