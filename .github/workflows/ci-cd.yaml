@@ -56,3 +56,4 @@ jobs:
             **/Thumbs.db
           state-name: .ftp-deploy-sync-state.json
           log-level: verbose
+          dangerous-clean-slate: true
