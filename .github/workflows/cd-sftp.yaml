@@ -1,4 +1,4 @@
-name: CD - FTP Deploy
+name: CD - FTP Deploy (with Composer)
 
 on:
   push:
@@ -8,13 +8,33 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, pdo, pdo_mysql
+          tools: composer:v2
+
+      - name: Install Composer dependencies
+        run: |
+          composer install --no-dev --no-interaction --optimize-autoloader
       - name: Deploy on FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.CD_HOST }}
           username: ${{ secrets.CD_USERNAME }}
           password: ${{ secrets.CD_PASSWORD }}
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            **/tests/**
+            **/.DS_Store
+            **/Thumbs.db
+          state-name: .ftp-deploy-sync-state.json
+          log-level: verbose
