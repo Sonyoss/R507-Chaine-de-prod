@@ -1,58 +1,58 @@
-name: CD - Deploy via SFTP
+name: CD - SFTP (password)
 
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      HOST: ${{ secrets.SFTP_HOST }}
+      PORT: ${{ secrets.SFTP_PORT }}
+      USER: ${{ secrets.SFTP_USER }}
+      PASS: ${{ secrets.SFTP_PASSWORD }}
+      REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # (Optionnel) Prépare un répertoire "deploy" pour éviter d'envoyer .git, .github, tests, etc.
-      - name: Build deploy folder (filter files)
+      - name: Build deploy folder
         run: |
           mkdir -p deploy
           rsync -a \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude 'node_modules/' \
-            --exclude 'var/' \
-            --exclude 'tests/' \
+            --exclude '.git/' --exclude '.github/' \
+            --exclude 'node_modules/' --exclude 'var/' --exclude 'tests/' \
             ./ deploy/
 
-      - name: Set up SSH key for SFTP
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SFTP_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          # Evite l'interactif sur l'empreinte de clé hôte
-          echo -e "Host ${{ secrets.SFTP_HOST }}\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
-
-      # Upload récursif du dossier "deploy" via SFTP
-      - name: Upload via SFTP with password (recursive)
-        env:
-          HOST: ${{ secrets.SFTP_HOST }}
-          PORT: ${{ secrets.SFTP_PORT }}
-          USER: ${{ secrets.SFTP_USER }}
-          PASS: ${{ secrets.SFTP_PASSWORD }}
-          REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+      - name: Install sshpass
         run: |
           sudo apt-get update -y
           sudo apt-get install -y sshpass
-          # création du dossier distant
-          sshpass -p "$PASS" sftp -o StrictHostKeyChecking=no -P "$PORT" "$USER@$HOST" << 'EOF'
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts
+
+      - name: SFTP preflight (pwd) - verbose
+        run: |
+          sshpass -p "$PASS" sftp -o StrictHostKeyChecking=yes -P "$PORT" -vvv "$USER@$HOST" <<< "pwd"
+
+      - name: Ensure remote dir exists
+        run: |
+          sshpass -p "$PASS" sftp -o StrictHostKeyChecking=yes -P "$PORT" "$USER@$HOST" <<EOF
           -mkdir $REMOTE_DIR
           quit
           EOF
-          # upload récursif
-          sshpass -p "$PASS" sftp -o StrictHostKeyChecking=no -P "$PORT" "$USER@$HOST" << 'EOF'
+
+      - name: Upload (recursive)
+        run: |
+          sshpass -p "$PASS" sftp -o StrictHostKeyChecking=yes -P "$PORT" "$USER@$HOST" <<EOF
           cd $REMOTE_DIR
           put -r deploy/*
           quit
           EOF
-
