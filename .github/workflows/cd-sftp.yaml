@@ -13,19 +13,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Déploiement direct du repo (on exclut .git, tests, var, etc. via l'action)
-      # Si tu préfères ne déployer qu'un dossier "build" ou "deploy", change local-dir plus bas.
       - name: Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASSWORD }}  
-          port: ${{ secrets.FTP_PORT }}      
-          local-dir: ./                                    #
-          # Conserve l'état de sync côté serveur pour n'envoyer que les diffs
+          port: ${{ secrets.FTP_PORT }}    
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}   
+          local-dir: ./
           state-name: .ftp-deploy-sync-state.json
-          # Exclusions utiles pour un projet Symfony
           exclude: |
             **/.git*
             **/.github/**
@@ -34,7 +31,5 @@ jobs:
             tests/**
             **/.DS_Store
             **/Thumbs.db
-          # Verbose aide au debug
           log-level: verbose
-          # passe à true si tu veux forcer un nettoyage distant (⚠️ supprime ce qui n'existe plus localement)
           dangerous-clean-slate: false
