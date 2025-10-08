@@ -35,4 +35,6 @@ jobs:
           touch var/data_test.db
 
       - name: Run PHPUnit
-        run: vendor/bin/phpunit -v --colors=always
+        run: |
+          vendor/bin/phpunit --colors=always --testdox
+
