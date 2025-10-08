@@ -1,4 +1,4 @@
-name: CD - FTPS (lftp)
+name: CD - Deploy via FTP/FTPS/SFTP
 
 on:
   push:
@@ -9,108 +9,35 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      HOST: ${{ secrets.FTP_HOST }}
-      PORT: ${{ secrets.FTP_PORT }}
-      USER: ${{ secrets.FTP_USER }}
-      PASS: ${{ secrets.FTP_PASSWORD }}
-      REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build deploy folder
-        run: |
-          mkdir -p deploy
-          rsync -a \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude 'node_modules/' \
-            --exclude 'var/' \
-            --exclude 'tests/' \
-            ./ deploy/
-
-      - name: Install lftp
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y lftp
-
-      # Détermine protocole selon le port:
-      #  - 21  => FTPS explicite (ftp:// + TLS forcé)
-      #  - 990 => FTPS implicite (ftps://)
-      - name: Decide protocol
-        id: proto
-        shell: bash
-        run: |
-          if [ -z "$PORT" ] || [ "$PORT" = "21" ]; then
-            echo "protocol=ftp" >> $GITHUB_OUTPUT
-          elif [ "$PORT" = "990" ]; then
-            echo "protocol=ftps" >> $GITHUB_OUTPUT
-          else
-            # Par défaut, on suppose FTPS explicite sur port personnalisé
-            echo "protocol=ftp" >> $GITHUB_OUTPUT
-          fi
-
-      # Préflight très verbeux pour diagnostiquer la connexion
-      - name: FTPS preflight (debug)
-        shell: bash
-        run: |
-          set -e
-          PROTO="${{ steps.proto.outputs.protocol }}"
-          echo "Using protocol: $PROTO on $HOST:$PORT"
-          lftp -d -e "
-            set net:timeout 25;
-            set net:max-retries 1;
-            set net:persist-retries 0;
-            set ftp:passive-mode true;
-            set ftp:use-feat true;
-            set xfer:clobber on;
-            set cmd:fail-exit true;
-            set ssl:verify-certificate false;
-            $( [ "$PROTO" = "ftp" ] && echo 'set ftp:ssl-force true; set ftp:ssl-auth TLS; set ftp:ssl-protect-data true;' )
-            open -u \"$USER\",\"$PASS\" ${PROTO}://$HOST:$PORT;
-            pwd;
-            bye;
-          "
-
-      - name: Ensure remote dir exists
-        shell: bash
-        run: |
-          PROTO="${{ steps.proto.outputs.protocol }}"
-          lftp -e "
-            set net:timeout 25;
-            set net:max-retries 1;
-            set net:persist-retries 0;
-            set ftp:passive-mode true;
-            set ftp:use-feat true;
-            set xfer:clobber on;
-            set cmd:fail-exit true;
-            set ssl:verify-certificate false;
-            $( [ "$PROTO" = "ftp" ] && echo 'set ftp:ssl-force true; set ftp:ssl-auth TLS; set ftp:ssl-protect-data true;' )
-            open -u \"$USER\",\"$PASS\" ${PROTO}://$HOST:$PORT;
-            mkdir -p $REMOTE_DIR;
-            bye;
-          "
-
-      - name: Upload (mirror -R)
-        shell: bash
-        run: |
-          PROTO="${{ steps.proto.outputs.protocol }}"
-          lftp -e "
-            set net:timeout 25;
-            set net:max-retries 1;
-            set net:persist-retries 0;
-            set ftp:passive-mode true;
-            set ftp:use-feat true;
-            set xfer:clobber on;
-            set cmd:fail-exit true;
-            set ssl:verify-certificate false;
-            $( [ "$PROTO" = "ftp" ] && echo 'set ftp:ssl-force true; set ftp:ssl-auth TLS; set ftp:ssl-protect-data true;' )
-            open -u \"$USER\",\"$PASS\" ${PROTO}://$HOST:$PORT;
-            mirror -R --only-newer --verbose=1 --parallel=4 \
-              --exclude-glob .git/ --exclude-glob .github/ \
-              --exclude-glob node_modules/ --exclude-glob var/ --exclude-glob tests/ \
-              deploy/ $REMOTE_DIR;
-            bye;
-          "
+      # Déploiement direct du repo (on exclut .git, tests, var, etc. via l'action)
+      # Si tu préfères ne déployer qu'un dossier "build" ou "deploy", change local-dir plus bas.
+      - name: Deploy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}            # Laisse vide si tu utilises une clé SSH (SFTP)
+          private-key: ${{ secrets.FTP_PRIVATE_KEY }}      # Optionnel: pour SFTP par clé
+          port: ${{ secrets.FTP_PORT }}
+          protocol: ${{ secrets.FTP_PROTOCOL }}            # ftp | ftps | ftps-implicit | sftp
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}        # ex: /www
+          local-dir: ./                                    # change en ./deploy si tu as un dossier préparé
+          # Conserve l'état de sync côté serveur pour n'envoyer que les diffs
+          state-name: .ftp-deploy-sync-state.json
+          # Exclusions utiles pour un projet Symfony
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            var/**
+            tests/**
+            **/.DS_Store
+            **/Thumbs.db
+          # Verbose aide au debug
+          log-level: verbose
+          # passe à true si tu veux forcer un nettoyage distant (⚠️ supprime ce qui n'existe plus localement)
+          dangerous-clean-slate: false
