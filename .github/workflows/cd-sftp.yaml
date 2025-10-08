@@ -20,12 +20,9 @@ jobs:
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}            # Laisse vide si tu utilises une clé SSH (SFTP)
-          private-key: ${{ secrets.FTP_PRIVATE_KEY }}      # Optionnel: pour SFTP par clé
-          port: ${{ secrets.FTP_PORT }}
-          protocol: ${{ secrets.FTP_PROTOCOL }}            # ftp | ftps | ftps-implicit | sftp
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}        # ex: /www
-          local-dir: ./                                    # change en ./deploy si tu as un dossier préparé
+          password: ${{ secrets.FTP_PASSWORD }}  
+          port: ${{ secrets.FTP_PORT }}      
+          local-dir: ./                                    #
           # Conserve l'état de sync côté serveur pour n'envoyer que les diffs
           state-name: .ftp-deploy-sync-state.json
           # Exclusions utiles pour un projet Symfony
