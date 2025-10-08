@@ -20,7 +20,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Prépare un dossier propre à envoyer (évite .git, tests, etc.)
       - name: Build deploy folder
         run: |
           mkdir -p deploy
@@ -37,43 +36,78 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y lftp
 
-      # (Optionnel) Test de connectivité et bannière
-      - name: FTPS preflight
+      # Détermine protocole selon le port:
+      #  - 21  => FTPS explicite (ftp:// + TLS forcé)
+      #  - 990 => FTPS implicite (ftps://)
+      - name: Decide protocol
+        id: proto
+        shell: bash
         run: |
-          lftp -u "$USER","$PASS" "ftp://$HOST:$PORT" -e "
-            set ftp:ssl-force true;
-            set ftp:ssl-allow true;
+          if [ -z "$PORT" ] || [ "$PORT" = "21" ]; then
+            echo "protocol=ftp" >> $GITHUB_OUTPUT
+          elif [ "$PORT" = "990" ]; then
+            echo "protocol=ftps" >> $GITHUB_OUTPUT
+          else
+            # Par défaut, on suppose FTPS explicite sur port personnalisé
+            echo "protocol=ftp" >> $GITHUB_OUTPUT
+          fi
+
+      # Préflight très verbeux pour diagnostiquer la connexion
+      - name: FTPS preflight (debug)
+        shell: bash
+        run: |
+          set -e
+          PROTO="${{ steps.proto.outputs.protocol }}"
+          echo "Using protocol: $PROTO on $HOST:$PORT"
+          lftp -d -e "
+            set net:timeout 25;
+            set net:max-retries 1;
+            set net:persist-retries 0;
             set ftp:passive-mode true;
+            set ftp:use-feat true;
+            set xfer:clobber on;
+            set cmd:fail-exit true;
             set ssl:verify-certificate false;
-            debug 3;
+            $( [ "$PROTO" = "ftp" ] && echo 'set ftp:ssl-force true; set ftp:ssl-auth TLS; set ftp:ssl-protect-data true;' )
+            open -u \"$USER\",\"$PASS\" ${PROTO}://$HOST:$PORT;
             pwd;
             bye;
           "
 
-      # Crée le répertoire distant si nécessaire
       - name: Ensure remote dir exists
+        shell: bash
         run: |
-          lftp -u "$USER","$PASS" "ftp://$HOST:$PORT" -e "
-            set ftp:ssl-force true;
-            set ftp:ssl-allow true;
+          PROTO="${{ steps.proto.outputs.protocol }}"
+          lftp -e "
+            set net:timeout 25;
+            set net:max-retries 1;
+            set net:persist-retries 0;
             set ftp:passive-mode true;
+            set ftp:use-feat true;
+            set xfer:clobber on;
+            set cmd:fail-exit true;
             set ssl:verify-certificate false;
+            $( [ "$PROTO" = "ftp" ] && echo 'set ftp:ssl-force true; set ftp:ssl-auth TLS; set ftp:ssl-protect-data true;' )
+            open -u \"$USER\",\"$PASS\" ${PROTO}://$HOST:$PORT;
             mkdir -p $REMOTE_DIR;
             bye;
           "
 
-      # Upload en miroir (reverse mirror) — met à jour, n’envoie que les fichiers modifiés
       - name: Upload (mirror -R)
+        shell: bash
         run: |
-          lftp -u "$USER","$PASS" "ftp://$HOST:$PORT" -e "
-            set ftp:ssl-force true;
-            set ftp:ssl-allow true;
+          PROTO="${{ steps.proto.outputs.protocol }}"
+          lftp -e "
+            set net:timeout 25;
+            set net:max-retries 1;
+            set net:persist-retries 0;
             set ftp:passive-mode true;
-            set ssl:verify-certificate false;
+            set ftp:use-feat true;
             set xfer:clobber on;
-            set net:timeout 20;
-            set net:max-retries 2;
-            set net:reconnect-interval-base 5;
+            set cmd:fail-exit true;
+            set ssl:verify-certificate false;
+            $( [ "$PROTO" = "ftp" ] && echo 'set ftp:ssl-force true; set ftp:ssl-auth TLS; set ftp:ssl-protect-data true;' )
+            open -u \"$USER\",\"$PASS\" ${PROTO}://$HOST:$PORT;
             mirror -R --only-newer --verbose=1 --parallel=4 \
               --exclude-glob .git/ --exclude-glob .github/ \
               --exclude-glob node_modules/ --exclude-glob var/ --exclude-glob tests/ \
