@@ -1,4 +1,4 @@
-name: CD - SFTP (password)
+name: CD - FTPS (lftp)
 
 on:
   push:
@@ -10,70 +10,73 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      HOST: ${{ secrets.SFTP_HOST }}
-      PORT: ${{ secrets.SFTP_PORT }}
-      USER: ${{ secrets.SFTP_USER }}
-      PASS: ${{ secrets.SFTP_PASSWORD }}
-      REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+      HOST: ${{ secrets.FTP_HOST }}
+      PORT: ${{ secrets.FTP_PORT }}
+      USER: ${{ secrets.FTP_USER }}
+      PASS: ${{ secrets.FTP_PASSWORD }}
+      REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Prépare un dossier propre à envoyer (évite .git, tests, etc.)
       - name: Build deploy folder
         run: |
           mkdir -p deploy
           rsync -a \
-            --exclude '.git/' --exclude '.github/' \
-            --exclude 'node_modules/' --exclude 'var/' --exclude 'tests/' \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'node_modules/' \
+            --exclude 'var/' \
+            --exclude 'tests/' \
             ./ deploy/
 
-      - name: Install sshpass
+      - name: Install lftp
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y sshpass
+          sudo apt-get install -y lftp
 
-      # ✅ Création correcte de ~/.ssh et ajout "best effort" de la host key
-      - name: Add host key (best effort)
-        shell: bash
+      # (Optionnel) Test de connectivité et bannière
+      - name: FTPS preflight
         run: |
-          set -e
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          # Tente de récupérer l'empreinte de la clé hôte (certains SFTP managés refusent)
-          if ssh-keyscan -T 5 -p "$PORT" "$HOST" 1>> ~/.ssh/known_hosts 2>/dev/null; then
-            echo "Host key added to known_hosts"
-          else
-            echo "ssh-keyscan failed; falling back to StrictHostKeyChecking=no"
-            {
-              echo "Host $HOST"
-              echo "  HostName $HOST"
-              echo "  Port $PORT"
-              echo "  StrictHostKeyChecking no"
-              echo "  UserKnownHostsFile=/dev/null"
-            } >> ~/.ssh/config
-          fi
-          chmod 644 ~/.ssh/known_hosts || true
+          lftp -u "$USER","$PASS" "ftp://$HOST:$PORT" -e "
+            set ftp:ssl-force true;
+            set ftp:ssl-allow true;
+            set ftp:passive-mode true;
+            set ssl:verify-certificate false;
+            debug 3;
+            pwd;
+            bye;
+          "
 
-      # 🔎 Test de connectivité SFTP très verbeux
-      - name: SFTP preflight (pwd) - verbose
-        shell: bash
-        run: |
-          sshpass -p "$PASS" sftp -P "$PORT" -o StrictHostKeyChecking=no -vvv "$USER@$HOST" <<< "pwd"
-
+      # Crée le répertoire distant si nécessaire
       - name: Ensure remote dir exists
-        shell: bash
         run: |
-          sshpass -p "$PASS" sftp -P "$PORT" -o StrictHostKeyChecking=no "$USER@$HOST" <<EOF
-          -mkdir $REMOTE_DIR
-          quit
-          EOF
+          lftp -u "$USER","$PASS" "ftp://$HOST:$PORT" -e "
+            set ftp:ssl-force true;
+            set ftp:ssl-allow true;
+            set ftp:passive-mode true;
+            set ssl:verify-certificate false;
+            mkdir -p $REMOTE_DIR;
+            bye;
+          "
 
-      - name: Upload (recursive)
-        shell: bash
+      # Upload en miroir (reverse mirror) — met à jour, n’envoie que les fichiers modifiés
+      - name: Upload (mirror -R)
         run: |
-          sshpass -p "$PASS" sftp -P "$PORT" -o StrictHostKeyChecking=no "$USER@$HOST" <<EOF
-          cd $REMOTE_DIR
-          put -r deploy/*
-          quit
-          EOF
+          lftp -u "$USER","$PASS" "ftp://$HOST:$PORT" -e "
+            set ftp:ssl-force true;
+            set ftp:ssl-allow true;
+            set ftp:passive-mode true;
+            set ssl:verify-certificate false;
+            set xfer:clobber on;
+            set net:timeout 20;
+            set net:max-retries 2;
+            set net:reconnect-interval-base 5;
+            mirror -R --only-newer --verbose=1 --parallel=4 \
+              --exclude-glob .git/ --exclude-glob .github/ \
+              --exclude-glob node_modules/ --exclude-glob var/ --exclude-glob tests/ \
+              deploy/ $REMOTE_DIR;
+            bye;
+          "
