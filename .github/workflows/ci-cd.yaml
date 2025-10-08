@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup PHP
@@ -36,7 +36,7 @@ jobs:
     if: ${{ success() }}
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Deploy on FTP
@@ -46,10 +46,12 @@ jobs:
           username: ${{ secrets.CD_USERNAME }}
           password: ${{ secrets.CD_PASSWORD }}
           exclude: |
+            **/.git/**
             **/.git*
             **/.github/**
             **/node_modules/**
             **/tests/**
+            var/**
             **/.DS_Store
             **/Thumbs.db
           state-name: .ftp-deploy-sync-state.json
