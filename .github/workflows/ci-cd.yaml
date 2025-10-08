@@ -25,7 +25,7 @@ jobs:
           coverage: none
 
       - name: Install dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
+        run: composer install --no-interaction --no-progress --prefer-dist --no-scripts
 
       - name: Run PHPUnit tests
         run: vendor/bin/phpunit --testdox --colors=always
