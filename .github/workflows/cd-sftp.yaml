@@ -1,4 +1,4 @@
-name: CD - Deploy via FTP/FTPS/SFTP
+name: CD - FTP Deploy
 
 on:
   push:
@@ -8,28 +8,13 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy
+      - name: Deploy on FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}  
-          port: ${{ secrets.FTP_PORT }}    
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}   
-          local-dir: ./
-          state-name: .ftp-deploy-sync-state.json
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/node_modules/**
-            var/**
-            tests/**
-            **/.DS_Store
-            **/Thumbs.db
-          log-level: verbose
-          dangerous-clean-slate: false
+          server: ${{ secrets.CD_HOST }}
+          username: ${{ secrets.CD_USERNAME }}
+          password: ${{ secrets.CD_PASSWORD }}
